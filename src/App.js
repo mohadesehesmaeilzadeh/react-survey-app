@@ -1,87 +1,99 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Badge, Card, Col, Container, ProgressBar, Row } from 'react-bootstrap';
-import { AnimatePresence, motion } from 'framer-motion';
+import { forwardRef, useCallback, useRef, useState } from 'react';
+import { Alert, Card, Col, Container, ProgressBar, Row } from 'react-bootstrap';
+import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'framer-motion';
 import UserInfoForm from './components/UserInfoForm';
 import SurveyQuestion from './components/SurveyQuestion';
 import SurveyTimer from './components/SurveyTimer';
 import ThankYou from './components/ThankYou';
 import questions from './data/questions';
+import useSurveyState, { isQuestionAnswered } from './hooks/useSurveyState';
 import './App.css';
 
-const SURVEY_DURATION = 2 * 60 * 1000;
-
-const storageKeys = {
-  user: 'surveyUser',
-  answers: 'surveyAnswers',
-  currentQuestion: 'surveyCurrentQuestion',
-  endTime: 'surveyEndTime',
-  status: 'surveyStatus',
+const questionVariants = {
+  enter: (slideDirection) => ({
+    opacity: 0,
+    x: slideDirection > 0 ? 18 : -18,
+  }),
+  center: {
+    opacity: 1,
+    x: 0,
+    transition: {
+      duration: 0.18,
+      ease: [0.22, 1, 0.36, 1],
+    },
+  },
+  exit: (slideDirection) => ({
+    opacity: 0,
+    x: slideDirection > 0 ? -12 : 12,
+    transition: {
+      duration: 0.12,
+      ease: [0.4, 0, 1, 1],
+    },
+  }),
 };
 
-const emptyUser = {
-  name: '',
-  email: '',
-  age: '',
+const reducedMotionVariants = {
+  enter: { opacity: 1, x: 0 },
+  center: { opacity: 1, x: 0, transition: { duration: 0 } },
+  exit: { opacity: 1, x: 0, transition: { duration: 0 } },
 };
 
-const emptyAnswers = {
-  question1: '',
-  question2: '',
-  question3: [],
+const questionLayoutTransition = {
+  duration: 0.2,
+  ease: [0.22, 1, 0.36, 1],
 };
 
-function readStorageValue(key, fallbackValue) {
-  const savedValue = localStorage.getItem(key);
+const AnimatedQuestionPanel = forwardRef(function AnimatedQuestionPanel(
+  { children, direction, variants },
+  ref
+) {
+  const isPresent = useIsPresent();
 
-  if (savedValue === null) {
-    return fallbackValue;
-  }
-
-  try {
-    return JSON.parse(savedValue);
-  } catch {
-    return fallbackValue;
-  }
-}
+  return (
+    <motion.div
+      ref={ref}
+      aria-hidden={isPresent ? undefined : true}
+      className="question-panel"
+      custom={direction}
+      inert={isPresent ? undefined : true}
+      variants={variants}
+      initial="enter"
+      animate="center"
+      exit="exit"
+      style={{ pointerEvents: isPresent ? 'auto' : 'none' }}
+    >
+      {children}
+    </motion.div>
+  );
+});
 
 function App() {
-  const [user, setUser] = useState(() => readStorageValue(storageKeys.user, emptyUser));
-  const [answers, setAnswers] = useState(() => readStorageValue(storageKeys.answers, emptyAnswers));
-  const [currentQuestion, setCurrentQuestion] = useState(() =>
-    readStorageValue(storageKeys.currentQuestion, 0)
-  );
-  const [endTime, setEndTime] = useState(() => readStorageValue(storageKeys.endTime, null));
-  const [surveyStatus, setSurveyStatus] = useState(() =>
-    readStorageValue(storageKeys.status, 'not-started')
-  );
+  const shouldReduceMotion = useReducedMotion();
+  const {
+    user,
+    answers,
+    currentQuestion,
+    endTime,
+    status: surveyStatus,
+    setUser,
+    startSurvey,
+    setAnswer,
+    goToPreviousQuestion,
+    goToNextQuestion,
+    submitSurvey,
+    expireSurvey,
+    resetSurvey,
+  } = useSurveyState();
   const [validationError, setValidationError] = useState('');
   const [direction, setDirection] = useState(1);
   const finalLogSent = useRef(surveyStatus === 'submitted' || surveyStatus === 'time-expired');
+  const surveyResult = useRef({ user, answers });
+  surveyResult.current = { user, answers };
 
   const surveyStarted = surveyStatus === 'in-progress';
   const surveyCompleted = surveyStatus === 'submitted' || surveyStatus === 'time-expired';
   const activeQuestion = questions[currentQuestion];
   const progress = Math.round(((currentQuestion + 1) / questions.length) * 100);
-
-  useEffect(() => {
-    localStorage.setItem(storageKeys.user, JSON.stringify(user));
-  }, [user]);
-
-  useEffect(() => {
-    localStorage.setItem(storageKeys.answers, JSON.stringify(answers));
-  }, [answers]);
-
-  useEffect(() => {
-    localStorage.setItem(storageKeys.currentQuestion, JSON.stringify(currentQuestion));
-  }, [currentQuestion]);
-
-  useEffect(() => {
-    localStorage.setItem(storageKeys.endTime, JSON.stringify(endTime));
-  }, [endTime]);
-
-  useEffect(() => {
-    localStorage.setItem(storageKeys.status, JSON.stringify(surveyStatus));
-  }, [surveyStatus]);
 
   const logSurveyResult = useCallback(
     (completed, reason) => {
@@ -91,176 +103,154 @@ function App() {
 
       finalLogSent.current = true;
       console.log('Survey Result:', {
-        user,
-        answers,
+        ...surveyResult.current,
         completed,
         reason,
       });
     },
-    [answers, user]
+    []
   );
 
   const handleTimeExpired = useCallback(() => {
     logSurveyResult(false, 'time-expired');
-    setSurveyStatus('time-expired');
-  }, [logSurveyResult]);
-
-  useEffect(() => {
-    if (surveyStarted && endTime && Date.now() >= endTime) {
-      handleTimeExpired();
-    }
-  }, [endTime, handleTimeExpired, surveyStarted]);
+    expireSurvey();
+  }, [expireSurvey, logSurveyResult]);
 
   const handleStartSurvey = (userInfo) => {
-    setUser(userInfo);
-    setCurrentQuestion(0);
-    setSurveyStatus('in-progress');
-    setEndTime(Date.now() + SURVEY_DURATION);
+    startSurvey(userInfo);
     setValidationError('');
     finalLogSent.current = false;
   };
 
   const handleAnswerChange = (questionId, value) => {
-    setAnswers((currentAnswers) => ({
-      ...currentAnswers,
-      [questionId]: value,
-    }));
+    setAnswer(questionId, value);
     setValidationError('');
-  };
-
-  const isQuestionAnswered = () => {
-    const answer = answers[activeQuestion.id];
-
-    if (activeQuestion.type === 'single') {
-      return Boolean(answer);
-    }
-
-    if (activeQuestion.type === 'text') {
-      return Boolean(answer.trim());
-    }
-
-    if (activeQuestion.type === 'multiple') {
-      return Array.isArray(answer) && answer.length > 0;
-    }
-
-    return false;
   };
 
   const handlePrevious = () => {
     setValidationError('');
     setDirection(-1);
-    setCurrentQuestion((questionIndex) => Math.max(questionIndex - 1, 0));
+    goToPreviousQuestion();
   };
 
   const handleNext = () => {
-    if (!isQuestionAnswered()) {
+    if (!isQuestionAnswered(activeQuestion, answers[activeQuestion.id])) {
       setValidationError('Please answer this question before continuing.');
       return;
     }
 
     setValidationError('');
     setDirection(1);
-    setCurrentQuestion((questionIndex) => Math.min(questionIndex + 1, questions.length - 1));
+    goToNextQuestion();
   };
 
   const handleSubmit = () => {
-    if (!isQuestionAnswered()) {
+    if (!isQuestionAnswered(activeQuestion, answers[activeQuestion.id])) {
       setValidationError('Please answer this question before submitting.');
       return;
     }
 
     logSurveyResult(true, 'submitted');
-    setSurveyStatus('submitted');
+    submitSurvey();
   };
 
   const handleRestart = () => {
-    Object.values(storageKeys).forEach((key) => localStorage.removeItem(key));
-    setUser(emptyUser);
-    setAnswers(emptyAnswers);
-    setCurrentQuestion(0);
-    setEndTime(null);
-    setSurveyStatus('not-started');
+    resetSurvey();
     setValidationError('');
     setDirection(1);
     finalLogSent.current = false;
   };
 
-  const questionVariants = {
-    enter: (slideDirection) => ({
-      opacity: 0,
-      x: slideDirection > 0 ? 30 : -30,
-    }),
-    center: {
-      opacity: 1,
-      x: 0,
-    },
-    exit: (slideDirection) => ({
-      opacity: 0,
-      x: slideDirection > 0 ? -30 : 30,
-    }),
-  };
-
   return (
-    <div className="app-shell">
-      <Container className="survey-container py-4 py-md-5">
-        <div className="text-center mb-4">
-          <Badge bg="primary" className="mb-2">
-            React Practice Project
-          </Badge>
-          <h1 className="app-title">Survey App</h1>
-        </div>
+    <main className="app-shell">
+      <Container className="survey-container">
+        <header className={`app-header ${surveyStarted ? 'is-compact' : ''}`}>
+          <div className="brand-row">
+            <div className="brand-lockup">
+              <span className="brand-mark" aria-hidden="true">R</span>
+              <div>
+                <h1 className="brand-name">React Survey</h1>
+                <p className="brand-meta">Two-minute questionnaire</p>
+              </div>
+            </div>
+            <span className="privacy-note">
+              <span className="privacy-dot" aria-hidden="true" />
+              Saved locally
+            </span>
+          </div>
+
+          {!surveyStarted && !surveyCompleted && (
+            <div className="app-intro">
+              <p className="app-eyebrow">A quick learner profile</p>
+              <p className="app-title">Share how you learn React.</p>
+              <p className="app-subtitle">
+                Three focused questions to understand your learning style and experience.
+              </p>
+            </div>
+          )}
+        </header>
 
         {!surveyStarted && !surveyCompleted && (
           <UserInfoForm user={user} onUserChange={setUser} onStartSurvey={handleStartSurvey} />
         )}
 
         {surveyStarted && (
-          <Card className="survey-card shadow-sm">
-            <Card.Body className="p-4">
-              <Row className="align-items-center g-3 mb-3">
+          <Card className="survey-card">
+            <Card.Body className="survey-card-body">
+              <Row className="survey-toolbar align-items-end g-3">
                 <Col>
-                  <p className="question-count mb-1">
-                    Question {currentQuestion + 1} of {questions.length}
-                  </p>
-                  <ProgressBar now={progress} label={`${progress}%`} />
+                  <div className="progress-heading">
+                    <p className="question-count mb-0">
+                      Question {currentQuestion + 1} of {questions.length}
+                    </p>
+                    <span className="progress-value" aria-hidden="true">
+                      {progress}%
+                    </span>
+                  </div>
+                  <ProgressBar
+                    now={progress}
+                    aria-label={`Survey progress: ${progress}%`}
+                  />
                 </Col>
                 <Col xs="12" sm="auto">
-                  <SurveyTimer
-                    endTime={endTime}
-                    isActive={surveyStarted}
-                    onTimeExpired={handleTimeExpired}
-                  />
+                  <SurveyTimer endTime={endTime} onTimeExpired={handleTimeExpired} />
                 </Col>
               </Row>
 
               {validationError && (
-                <Alert variant="warning" className="mb-3">
+                <Alert variant="warning" className="validation-alert" role="alert">
                   {validationError}
                 </Alert>
               )}
 
-              <AnimatePresence mode="wait" custom={direction}>
-                <motion.div
-                  key={activeQuestion.id}
-                  custom={direction}
-                  variants={questionVariants}
-                  initial="enter"
-                  animate="center"
-                  exit="exit"
-                  transition={{ duration: 0.2 }}
-                >
-                  <SurveyQuestion
-                    answer={answers[activeQuestion.id]}
-                    currentQuestion={currentQuestion}
-                    question={activeQuestion}
-                    totalQuestions={questions.length}
-                    onAnswerChange={handleAnswerChange}
-                    onNext={handleNext}
-                    onPrevious={handlePrevious}
-                    onSubmit={handleSubmit}
-                  />
-                </motion.div>
-              </AnimatePresence>
+              <motion.div
+                className="question-stage"
+                layout={shouldReduceMotion ? false : 'size'}
+                transition={shouldReduceMotion ? { duration: 0 } : questionLayoutTransition}
+              >
+                <AnimatePresence initial={false} mode="popLayout" custom={direction}>
+                  <AnimatedQuestionPanel
+                    key={activeQuestion.id}
+                    direction={direction}
+                    variants={shouldReduceMotion ? reducedMotionVariants : questionVariants}
+                  >
+                    <SurveyQuestion
+                      answer={answers[activeQuestion.id]}
+                      canContinue={isQuestionAnswered(
+                        activeQuestion,
+                        answers[activeQuestion.id]
+                      )}
+                      currentQuestion={currentQuestion}
+                      question={activeQuestion}
+                      totalQuestions={questions.length}
+                      onAnswerChange={handleAnswerChange}
+                      onNext={handleNext}
+                      onPrevious={handlePrevious}
+                      onSubmit={handleSubmit}
+                    />
+                  </AnimatedQuestionPanel>
+                </AnimatePresence>
+              </motion.div>
             </Card.Body>
           </Card>
         )}
@@ -269,7 +259,7 @@ function App() {
           <ThankYou reason={surveyStatus} answers={answers} user={user} onRestart={handleRestart} />
         )}
       </Container>
-    </div>
+    </main>
   );
 }
 
