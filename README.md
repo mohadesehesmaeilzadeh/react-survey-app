@@ -1,148 +1,90 @@
-# React Survey App
+# React Survey
 
-A simple multi-step survey application built with React.
+> A polished, accessible multi-step questionnaire with refresh-safe persistence and a real two-minute deadline.
 
-The app collects basic user information, presents one survey question at a time, keeps answers and timer state after refresh, and shows a final thank-you screen when the survey is submitted or the time limit expires.
+[![React](https://img.shields.io/badge/React-19-20232a?logo=react&logoColor=61dafb)](https://react.dev/)
+[![Create React App](https://img.shields.io/badge/Create%20React%20App-5.0-09d3ac?logo=create-react-app&logoColor=white)](https://create-react-app.dev/)
+[![Tests](https://img.shields.io/badge/tests-16%20passing-2f855a)](#testing)
+[![Deploy to GitHub Pages](https://github.com/mohadesehesmaeilzadeh/react-survey-app/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/mohadesehesmaeilzadeh/react-survey-app/actions/workflows/deploy-pages.yml)
+
+[View live demo](https://mohadesehesmaeilzadeh.github.io/react-survey-app/) · [Browse the source](https://github.com/mohadesehesmaeilzadeh/react-survey-app)
+
+![React Survey start screen](docs/screenshots/survey-start.png)
+
+## Overview
+
+React Survey is a frontend-only questionnaire that collects participant details, presents one question at a time, and keeps the entire in-progress session safe across refreshes. The experience includes multiple question types, guarded navigation, a persistent two-minute timer, animated transitions, and dedicated submitted and time-expired completion states.
+
+The project focuses on the details that make a small application feel production-ready: explicit state transitions, resilient browser storage, accessible native controls, responsive interaction design, and focused behavioral tests.
 
 ## Features
 
-- User information form
-- Three different question types
-  - Single-choice question
-  - Descriptive text question
-  - Multiple-choice question
-- One question displayed at a time
-- Previous and Next navigation
-- Ability to return to previous questions and edit answers
-- Two-minute survey timer
-- Timer persists after browser refresh
-- Survey answers persist after browser refresh
-- Current question persists after browser refresh
-- Progress bar
-- Form validation
-- Animated transitions between questions
-- Automatic submission flow when time expires
-- Thank-you screen
-- Restart / start-new-survey flow
-- Final survey result logged to the browser console
-- Responsive interface using Bootstrap and React-Bootstrap
+- One-question-per-page survey flow
+- Single-choice, free-text, and multiple-choice questions
+- Previous, Next, and Submit navigation with boundary protection
+- Answers preserved when moving backward and forward
+- Next and Submit disabled until the current answer is valid
+- Visible question count and percentage progress
+- Two-minute deadline that survives browser refreshes
+- Local persistence for user details, answers, progress, deadline, and status
+- Safe recovery from malformed or stale `localStorage` values
+- Automatic time-expired completion flow
+- Duplicate-submission protection
+- Completion summary with a safe restart action
+- Direction-aware question transitions with reduced-motion support
+- Responsive desktop and mobile layouts
+- Frontend-only architecture with no backend, authentication, or analytics
 
-## Technologies
+## Tech Stack
 
-- React
-- JavaScript
-- Create React App
-- Bootstrap
-- React-Bootstrap
-- Framer Motion
-- Local Storage
-
-## Project Structure
-
-```text
-src/
-├── components/
-│   ├── SurveyQuestion.js
-│   ├── SurveyTimer.js
-│   ├── ThankYou.js
-│   └── UserInfoForm.js
-│
-├── data/
-│   └── questions.js
-│
-├── App.css
-├── App.js
-├── App.test.js
-├── index.css
-└── index.js
-```
+| Area | Technology |
+| --- | --- |
+| UI | React 19, React Bootstrap, Bootstrap 5 |
+| State | `useReducer`, custom `useSurveyState` hook |
+| Motion | Framer Motion |
+| Persistence | Browser `localStorage` |
+| Testing | Jest, React Testing Library, jest-dom |
+| Build | Create React App / `react-scripts` 5 |
+| Deployment | GitHub Actions and GitHub Pages |
 
 ## Survey Flow
 
 ```text
-User Information
-       ↓
-Start Survey
-       ↓
-Question 1
-       ↓
-Question 2
-       ↓
-Question 3
-       ↓
-Submit Survey
-       ↓
-Thank You
+Participant details
+        │
+        ▼
+Start survey ─────────────── starts the two-minute deadline
+        │
+        ▼
+Single choice ──► Free text ──► Multiple choice
+        ▲              │               │
+        └──── Back ────┴──── Back ─────┘
+                                       │
+                                       ▼
+                              Submit survey
+                                       │
+                          ┌────────────┴────────────┐
+                          ▼                         ▼
+                  Completed summary          Time-expired state
+                          └────────────┬────────────┘
+                                       ▼
+                                  Start again
 ```
 
-If the two-minute timer reaches zero before submission, the app automatically ends the survey and displays the time-expired thank-you screen.
+Navigation is enforced in both the interface and the reducer. A user cannot skip unanswered questions, move outside the available question range, update an inactive question, or submit before reaching and answering the final question.
 
-## Survey Questions
+## Timer and Persistence
 
-The project currently includes three React-related questions.
-
-### Question 1 — Single Choice
-
-**What is your preferred way to learn React?**
-
-Options:
-
-- Video courses
-- Documentation
-- Practice projects
-- Online tutorials
-
-### Question 2 — Descriptive
-
-**What do you like most about React?**
-
-The user answers using a textarea.
-
-### Question 3 — Multiple Choice
-
-**Which React topics have you learned?**
-
-Options:
-
-- Components
-- Props
-- State
-- Hooks
-- React Router
-
-The user can select more than one answer.
-
-## User Information
-
-Before the survey begins, the user enters basic information such as:
-
-- Name
-- Email
-- Age
-
-The timer starts only after the survey is started.
-
-## Two-Minute Timer
-
-The survey has a fixed duration of two minutes.
-
-Instead of storing only a countdown number, the app stores the survey end time. This makes the timer continue correctly even after refreshing the browser.
-
-Conceptually:
+The timer stores an absolute deadline instead of saving a decrementing counter:
 
 ```js
 const endTime = Date.now() + 2 * 60 * 1000;
+const remainingTime = Math.max(endTime - Date.now(), 0);
 ```
 
-The remaining time is calculated from the saved end time.
+That distinction keeps the timer accurate after refreshes, background tabs, and delayed interval callbacks. Refreshing after 40 seconds resumes near `01:20`; it does not restart at `02:00`.
 
-This means that if the user refreshes the page after 30 seconds, the timer continues from approximately 1:30 instead of restarting from 2:00.
-
-## Local Storage
-
-The application uses `localStorage` to preserve survey progress.
-
-Stored data includes:
+Only the state required to restore the survey is persisted:
 
 ```text
 surveyUser
@@ -152,190 +94,164 @@ surveyEndTime
 surveyStatus
 ```
 
-Because of this, refreshing the browser does not remove:
+Stored data is parsed defensively and normalized against the current questions. Invalid answer shapes, unknown statuses, impossible question indexes, invalid users, and stale or suspicious deadlines fall back to a safe reachable state. Timer intervals are cleared on unmount, and each deadline can trigger expiration only once.
 
-- User information
-- Previous answers
-- Current question
-- Remaining survey time
-- Survey status
+## Testing
 
-## Navigation
-
-Users can move through the survey using:
-
-```text
-Previous
-Next
-Submit Survey
-```
-
-The Previous button allows users to return to earlier questions and change their answers.
-
-The first question disables the Previous button.
-
-The final question displays a Submit Survey button instead of Next.
-
-## Validation
-
-The user must answer the current question before moving forward.
-
-Validation rules:
-
-- Single-choice question: one option must be selected
-- Descriptive question: the answer cannot be empty
-- Multiple-choice question: at least one option must be selected
-
-If validation fails, an error message is displayed.
-
-## Animations
-
-Question transitions are animated with Framer Motion.
-
-The app changes the slide direction depending on whether the user moves forward or backward.
-
-Example behavior:
-
-```text
-Next      → slide from right
-Previous  → slide from left
-```
-
-The animations are intentionally simple and subtle.
-
-## Progress
-
-The app displays survey progress based on the current question.
-
-For three questions:
-
-```text
-Question 1 → 33%
-Question 2 → 67%
-Question 3 → 100%
-```
-
-## Survey Result
-
-When the user submits the survey, the collected data is logged to the browser console.
-
-Example:
-
-```js
-{
-  user: {
-    name: "...",
-    email: "...",
-    age: "..."
-  },
-  answers: {
-    question1: "...",
-    question2: "...",
-    question3: ["...", "..."]
-  },
-  completed: true,
-  reason: "submitted"
-}
-```
-
-If the timer expires:
-
-```js
-{
-  user: {
-    name: "...",
-    email: "...",
-    age: "..."
-  },
-  answers: {
-    question1: "...",
-    question2: "...",
-    question3: []
-  },
-  completed: false,
-  reason: "time-expired"
-}
-```
-
-## Installation
-
-Clone the repository:
+The focused test suite currently contains **16 passing tests across 3 suites**.
 
 ```bash
-git clone https://github.com/mohadesehesmaeilzadeh/react-survey-app.git
+npm test -- --watchAll=false
 ```
 
-Open the project directory:
+Coverage focuses on behavior rather than snapshots:
 
-```bash
-cd react-survey-app
-```
+- Question navigation and Back/Next boundaries
+- Answer persistence across navigation and refresh
+- Required-answer validation for every question type
+- Timer restoration, expiration, and interval cleanup
+- Completion and duplicate-submit protection
+- Restart/reset behavior
+- Invalid `localStorage` recovery
+- Invalid survey status and question-index recovery
 
-Install dependencies:
-
-```bash
-npm install
-```
-
-Start the development server:
-
-```bash
-npm start
-```
-
-Then open:
-
-```text
-http://localhost:3000
-```
-
-## Production Build
-
-Create an optimized production build with:
+Create React App also runs its configured ESLint rules during the production build:
 
 ```bash
 npm run build
 ```
 
-## Main Dependencies
+## Accessibility
 
-The project uses:
+- Native radio, checkbox, textarea, input, and button controls
+- Explicit labels, semantic fieldsets, and labelled question groups
+- Logical heading hierarchy and reading order
+- Full keyboard navigation with visible focus indicators
+- Selected options identified by control state, shape, border, and color
+- Accessible progress and timer names
+- Disabled navigation exposed with native `disabled` semantics
+- Minimum 48px action targets and 56px option rows on mobile
+- Completion heading receives focus after submission or expiration
+- High-contrast text and interaction states
+- `prefers-reduced-motion` support in both Framer Motion and CSS
 
-```text
-react
-react-dom
-react-bootstrap
-bootstrap
-framer-motion
+## Screenshots
+
+### Active question
+
+![Selected survey answer on desktop](docs/screenshots/survey-question.png)
+
+### Mobile layout
+
+<p align="center">
+  <img src="docs/screenshots/survey-mobile.png" alt="React Survey question on a mobile viewport" width="390" />
+</p>
+
+All screenshots were captured from the running application rather than from a design mockup.
+
+## Installation
+
+### Prerequisites
+
+- Node.js 20 or newer
+- npm
+
+### Run locally
+
+```bash
+git clone https://github.com/mohadesehesmaeilzadeh/react-survey-app.git
+cd react-survey-app
+npm ci
+npm start
 ```
 
-## Repository
+Open [http://localhost:3000](http://localhost:3000).
 
-You can view the complete source code on GitHub:
+### Production build
 
-[React Survey App - GitHub Repository](https://github.com/mohadesehesmaeilzadeh/react-survey-app)
+```bash
+npm run build
+```
 
-## Learning Goals
+The optimized static output is generated in `build/`.
 
-This project practices several important React concepts:
+## Deployment
 
-- Functional components
-- Props
-- `useState`
-- `useEffect`
-- `useCallback`
-- `useRef`
-- Controlled forms
-- Conditional rendering
-- Rendering from data
-- Form validation
-- Local Storage
-- Timers
-- Effect cleanup
-- Navigation between steps
-- Responsive UI
-- Animation with Framer Motion
+This repository is configured for project-site hosting at:
+
+```text
+https://mohadesehesmaeilzadeh.github.io/react-survey-app/
+```
+
+The `homepage` value in `package.json` makes Create React App generate asset paths beneath `/react-survey-app/`. The Pages workflow then:
+
+1. Checks out `master`
+2. Installs exact dependencies with `npm ci`
+3. Runs the complete test suite
+4. Creates the production build
+5. Uploads `build/` as the Pages artifact
+6. Deploys through GitHub's official Pages action
+
+The workflow can also be started manually from the repository's **Actions** tab.
+
+## Project Structure
+
+```text
+react-survey-app/
+├── .github/workflows/deploy-pages.yml
+├── docs/screenshots/
+├── public/
+├── src/
+│   ├── components/
+│   │   ├── SurveyQuestion.js
+│   │   ├── SurveyTimer.js
+│   │   ├── SurveyTimer.test.js
+│   │   ├── ThankYou.js
+│   │   └── UserInfoForm.js
+│   ├── data/questions.js
+│   ├── hooks/
+│   │   ├── useSurveyState.js
+│   │   └── useSurveyState.test.js
+│   ├── App.css
+│   ├── App.js
+│   └── App.test.js
+├── package.json
+└── README.md
+```
+
+## Challenges
+
+### Keeping time honest across refreshes
+
+A normal countdown can accidentally grant extra time after a reload or when the browser throttles intervals. Using an absolute deadline makes time calculation independent from render frequency and interval accuracy.
+
+### Restoring state without trusting storage
+
+Browser storage is user-editable and can become stale after application changes. The state initializer validates types, allowed options, statuses, indexes, and deadlines before deciding which question is safely reachable.
+
+### Combining animation with accessibility
+
+Exit animations briefly keep two question panels in the DOM. The departing panel is marked inert, hidden from assistive technology, and unable to receive pointer input. Reduced-motion users receive an immediate transition.
+
+### Preventing invalid state transitions
+
+Disabling a button is useful feedback, but it is not a state guarantee. Reducer actions independently enforce active-question updates, valid navigation, legal completion states, and first/last-question boundaries.
+
+## What I Learned
+
+- Model multi-step UI as explicit state transitions instead of scattered state setters.
+- Persist the smallest restorable state and validate everything read from storage.
+- Store timer deadlines, not countdown snapshots.
+- Keep interval callbacks stable and clean them up on every lifecycle path.
+- Treat disabled controls as UX feedback while enforcing the same rule in state logic.
+- Make animated transitions non-blocking and remove exiting content from the accessibility tree.
+- Prefer focused behavioral tests over brittle snapshots for interactive applications.
+- Deployment paths are part of the build configuration when hosting a project beneath a GitHub Pages subdirectory.
+
+## Privacy
+
+Survey data stays in the participant's browser. The project has no backend, account system, analytics integration, or network submission endpoint.
 
 ## Author
 
-Developed as a React practice project.
+Built by [mohadesehesmaeilzadeh](https://github.com/mohadesehesmaeilzadeh) as a React portfolio project.
