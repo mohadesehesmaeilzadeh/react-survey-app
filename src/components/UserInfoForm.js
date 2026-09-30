@@ -1,22 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Alert, Button, Card, Form } from 'react-bootstrap';
 
 function UserInfoForm({ user, onUserChange, onStartSurvey }) {
-  const [formData, setFormData] = useState(user);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    setFormData(user);
-  }, [user]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
     const updatedUser = {
-      ...formData,
+      ...user,
       [name]: value,
     };
 
-    setFormData(updatedUser);
     onUserChange(updatedUser);
     setError('');
   };
@@ -24,63 +18,77 @@ function UserInfoForm({ user, onUserChange, onStartSurvey }) {
   const handleSubmit = (event) => {
     event.preventDefault();
 
-    if (!formData.name.trim() || !formData.email.trim()) {
+    if (!user.name.trim() || !user.email.trim()) {
       setError('Please enter your name and email before starting the survey.');
       return;
     }
 
-    onStartSurvey(formData);
+    onStartSurvey(user);
   };
 
   return (
-    <Card className="survey-card shadow-sm">
-      <Card.Body className="p-4">
-        <Card.Title>User Information</Card.Title>
-        <Card.Text className="text-muted">
+    <Card className="survey-card">
+      <Card.Body className="survey-card-body">
+        <p className="form-kicker">Before you begin</p>
+        <Card.Title as="h2" className="form-title">User information</Card.Title>
+        <Card.Text className="form-intro">
           Enter your details before starting the two-minute survey.
         </Card.Text>
 
-        {error && <Alert variant="warning">{error}</Alert>}
+        {error && (
+          <Alert variant="warning" className="validation-alert" role="alert">
+            {error}
+          </Alert>
+        )}
 
         <Form onSubmit={handleSubmit}>
-          <Form.Group className="mb-3" controlId="name">
-            <Form.Label>Name</Form.Label>
+          <Form.Group className="form-field" controlId="name">
+            <Form.Label>
+              Name <span className="required-marker" aria-hidden="true">*</span>
+            </Form.Label>
             <Form.Control
               name="name"
               type="text"
               placeholder="Enter your name"
-              value={formData.name}
+              value={user.name}
               onChange={handleChange}
+              autoComplete="name"
               required
             />
           </Form.Group>
 
-          <Form.Group className="mb-3" controlId="email">
-            <Form.Label>Email</Form.Label>
+          <Form.Group className="form-field" controlId="email">
+            <Form.Label>
+              Email <span className="required-marker" aria-hidden="true">*</span>
+            </Form.Label>
             <Form.Control
               name="email"
               type="email"
               placeholder="Enter your email"
-              value={formData.email}
+              value={user.email}
               onChange={handleChange}
+              autoComplete="email"
               required
             />
           </Form.Group>
 
-          <Form.Group className="mb-4" controlId="age">
-            <Form.Label>Age</Form.Label>
+          <Form.Group className="form-field" controlId="age">
+            <Form.Label>
+              Age <span className="optional-label">Optional</span>
+            </Form.Label>
             <Form.Control
               name="age"
               type="number"
               min="1"
               placeholder="Enter your age"
-              value={formData.age}
+              value={user.age}
               onChange={handleChange}
+              inputMode="numeric"
             />
           </Form.Group>
 
-          <div className="d-grid">
-            <Button type="submit" variant="primary" size="lg">
+          <div className="d-grid form-submit">
+            <Button type="submit" variant="primary" size="lg" className="survey-button">
               Start Survey
             </Button>
           </div>
